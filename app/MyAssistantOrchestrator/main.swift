@@ -18,6 +18,14 @@ class OrchestratorApp: NSObject, NSApplicationDelegate {
         return url?.path ?? FileManager.default.currentDirectoryPath
     }()
 
+    // Logs must live outside TCC-protected folders (e.g. ~/Desktop). A launchd
+    // agent cannot open StandardOut/ErrorPath under ~/Desktop and fails to spawn
+    // with EX_CONFIG (78) before node ever runs. ~/Library/Logs is unprotected.
+    private let logDir: String = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return "\(home)/Library/Logs/nanoclaw"
+    }()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Create a small utility window
         let windowRect = NSRect(x: 0, y: 0, width: 320, height: 220)
@@ -143,14 +151,14 @@ class OrchestratorApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func clearLogs() {
-        let logPath = "\(projectRoot)/logs/nanoclaw.log"
-        let errorLogPath = "\(projectRoot)/logs/nanoclaw.error.log"
+        let logPath = "\(logDir)/nanoclaw.log"
+        let errorLogPath = "\(logDir)/nanoclaw.error.log"
         try? "".write(toFile: logPath, atomically: true, encoding: .utf8)
         try? "".write(toFile: errorLogPath, atomically: true, encoding: .utf8)
     }
 
     @objc private func viewLogs() {
-        let logPath = "\(projectRoot)/logs/nanoclaw.log"
+        let logPath = "\(logDir)/nanoclaw.log"
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         task.arguments = ["-a", "Console", logPath]
@@ -172,7 +180,6 @@ class OrchestratorApp: NSObject, NSApplicationDelegate {
         guard !fm.fileExists(atPath: plistPath) else { return }
 
         let nodePath = findNode()
-        let logDir = "\(projectRoot)/logs"
         try? fm.createDirectory(atPath: logDir, withIntermediateDirectories: true)
 
         let plist = """
