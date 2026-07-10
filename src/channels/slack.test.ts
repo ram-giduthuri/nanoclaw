@@ -496,7 +496,10 @@ describe('SlackChannel', () => {
     it.each([
       {
         name: 'prepends trigger when bot is @mentioned via Slack format',
-        event: { text: 'Hey <@U_BOT_123> what do you think?', user: 'U_USER_456' },
+        event: {
+          text: 'Hey <@U_BOT_123> what do you think?',
+          user: 'U_USER_456',
+        },
         content: '@Jonesy Hey <@U_BOT_123> what do you think?',
       },
       {
@@ -664,14 +667,22 @@ describe('SlackChannel', () => {
     it.each([
       { desc: 'owns slack: JIDs', jid: 'slack:C0123456789', owns: true },
       { desc: 'owns slack: DM JIDs', jid: 'slack:D0123456789', owns: true },
-      { desc: 'does not own WhatsApp group JIDs', jid: '12345@g.us', owns: false },
+      {
+        desc: 'does not own WhatsApp group JIDs',
+        jid: '12345@g.us',
+        owns: false,
+      },
       {
         desc: 'does not own WhatsApp DM JIDs',
         jid: '12345@s.whatsapp.net',
         owns: false,
       },
       { desc: 'does not own Telegram JIDs', jid: 'tg:123456', owns: false },
-      { desc: 'does not own unknown JID formats', jid: 'random-string', owns: false },
+      {
+        desc: 'does not own unknown JID formats',
+        jid: 'random-string',
+        owns: false,
+      },
     ])('$desc', ({ jid, owns }) => {
       const channel = new SlackChannel(createTestOpts());
       expect(channel.ownsJid(jid)).toBe(owns);
@@ -807,7 +818,6 @@ describe('SlackChannel', () => {
     });
   });
 });
-
 
 describe('markdownToSlackMrkdwn', () => {
   it('converts **bold** to Slack *bold*', () => {

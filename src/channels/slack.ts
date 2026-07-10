@@ -40,24 +40,24 @@ export function markdownToSlackMrkdwn(md: string): string {
     .replace(/`[^`\n]*`/g, stash);
 
   text = text
-    .split("\n")
+    .split('\n')
     .map((line) => {
-      if (/^([-*_])\1{2,}$/.test(line.trim())) return "";
+      if (/^([-*_])\1{2,}$/.test(line.trim())) return '';
       const h = /^\s{0,3}#{1,6}\s+/.exec(line);
-      if (h) line = "*" + line.slice(h[0].length) + "*";
+      if (h) line = '*' + line.slice(h[0].length) + '*';
       // Leading "- " / "* " bullets -> "• ".
-      line = line.replace(/^(\s*)[-*]\s+/, "$1• ");
+      line = line.replace(/^(\s*)[-*]\s+/, '$1• ');
       return line;
     })
-    .join("\n")
+    .join('\n')
     // **bold** -> *bold*. Single _ is left alone (Slack italic is native), so
     // snake_case / __init__ survive intact.
-    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+    .replace(/\*\*([^*]+)\*\*/g, '*$1*')
     // Link text excludes both brackets so a run of "[[[[" can't be consumed
     // then backtracked at every position (that was the super-linear case).
-    .replace(/\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "<$2|$1>");
+    .replace(/\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<$2|$1>');
 
-  const restore = new RegExp(S + String.raw`(\d+)` + S, "g");
+  const restore = new RegExp(S + String.raw`(\d+)` + S, 'g');
   return text.replace(restore, (_m, i) => code[Number(i)]);
 }
 
