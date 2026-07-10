@@ -39,8 +39,9 @@ WORKDIR /app
 # Copy package files first for better caching
 COPY agent-runner/package*.json ./
 
-# Install dependencies (includes Atlassian MCP server)
-RUN npm install
+RUN npm ci \
+    && sed -i "s#/rest/api/3/search'#/rest/api/3/search/jql'#g" node_modules/mcp-atlassian/dist/jira/handlers.js \
+    && grep -c "/rest/api/3/search/jql'" node_modules/mcp-atlassian/dist/jira/handlers.js
 
 # Copy source code
 COPY agent-runner/ ./

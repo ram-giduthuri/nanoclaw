@@ -17,6 +17,50 @@ import {
 // Messages exceeding this are split into sequential chunks.
 const MAX_MESSAGE_LENGTH = 4000;
 
+/**
+ * Convert standard Markdown (as agents emit) to Slack `mrkdwn`, which uses
+ * single `*` for bold and `<url|text>` links. Without this, `**bold**` and
+ * `[text](url)` render literally in Slack.
+ *
+ * Code is passed through verbatim: fenced ```blocks``` and inline `code` are
+ * extracted before any transform and restored after, so shell/code content
+ * (e.g. `--no-cache`, `# comment`, `**kwargs`) is never rewritten. Single `_`
+ * is left alone (Slack renders it as italic natively) so snake_case and
+ * dunder identifiers like `__init__` survive intact.
+ */
+export function markdownToSlackMrkdwn(md: string): string {
+  const code: string[] = [];
+  // Sentinel wraps a stash index. Built from a control char that never appears
+  // in real text and carries no surrounding spaces, so a restored ``` fence
+  // still starts its own line and no prose rule below can match it.
+  const S = String.fromCodePoint(1);
+  const stash = (m: string): string => S + (code.push(m) - 1) + S;
+  let text = md
+    .replace(/```(?:[^`]|`(?!``))*```/g, stash)
+    .replace(/`[^`\n]*`/g, stash);
+
+  text = text
+    .split("\n")
+    .map((line) => {
+      if (/^([-*_])\1{2,}$/.test(line.trim())) return "";
+      const h = /^\s{0,3}#{1,6}\s+/.exec(line);
+      if (h) line = "*" + line.slice(h[0].length) + "*";
+      // Leading "- " / "* " bullets -> "• ".
+      line = line.replace(/^(\s*)[-*]\s+/, "$1• ");
+      return line;
+    })
+    .join("\n")
+    // **bold** -> *bold*. Single _ is left alone (Slack italic is native), so
+    // snake_case / __init__ survive intact.
+    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+    // Link text excludes both brackets so a run of "[[[[" can't be consumed
+    // then backtracked at every position (that was the super-linear case).
+    .replace(/\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "<$2|$1>");
+
+  const restore = new RegExp(S + String.raw`(\d+)` + S, "g");
+  return text.replace(restore, (_m, i) => code[Number(i)]);
+}
+
 // The message subtypes we process. Bolt delivers all subtypes via app.event('message');
 // we filter to regular messages (GenericMessageEvent, subtype undefined) and bot messages
 // (BotMessageEvent, subtype 'bot_message') so we can track our own output.
@@ -172,17 +216,21 @@ export class SlackChannel implements Channel {
 
     try {
       // Slack limits messages to ~4000 characters; split if needed
-      if (text.length <= MAX_MESSAGE_LENGTH) {
-        await this.app.client.chat.postMessage({ channel: channelId, text });
+      const rendered = markdownToSlackMrkdwn(text);
+      if (rendered.length <= MAX_MESSAGE_LENGTH) {
+        await this.app.client.chat.postMessage({
+          channel: channelId,
+          text: rendered,
+        });
       } else {
-        for (let i = 0; i < text.length; i += MAX_MESSAGE_LENGTH) {
+        for (let i = 0; i < rendered.length; i += MAX_MESSAGE_LENGTH) {
           await this.app.client.chat.postMessage({
             channel: channelId,
-            text: text.slice(i, i + MAX_MESSAGE_LENGTH),
+            text: rendered.slice(i, i + MAX_MESSAGE_LENGTH),
           });
         }
       }
-      logger.info({ jid, length: text.length }, 'Slack message sent');
+      logger.info({ jid, length: rendered.length }, 'Slack message sent');
     } catch (err) {
       this.outgoingQueue.push({ jid, text });
       logger.warn(
@@ -273,7 +321,7 @@ export class SlackChannel implements Channel {
         const channelId = item.jid.replace(/^slack:/, '');
         await this.app.client.chat.postMessage({
           channel: channelId,
-          text: item.text,
+          text: markdownToSlackMrkdwn(item.text),
         });
         logger.info(
           { jid: item.jid, length: item.text.length },

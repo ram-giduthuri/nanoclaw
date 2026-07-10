@@ -1,0 +1,8 @@
+{
+  "$comment": "Opt-in list of skills to pull from Ram's claude-plugins marketplace into container/skills/ so nanoclaw agents (RamBo) can use them. Single source of truth stays in claude-plugins; the copies synced here are generated artifacts (gitignored). Add an entry, run `npm run sync-skills`. To pull EVERY plugin skill instead, set \"all\": true.",
+  "source": "../claude-plugins",
+  "all": false,
+  "skills": [
+    { "plugin": "weekly-update", "skill": "weekly-update" }
+  ]
+}

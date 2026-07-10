@@ -1,0 +1,5 @@
+# node_modules are installed inside the image via `npm install`; never copy the
+# host's (they'd be macOS-native and would clobber the in-image install — including
+# the mcp-atlassian /search/jql patch applied right after npm install).
+agent-runner/node_modules
+agent-runner/dist

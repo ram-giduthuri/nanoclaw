@@ -82,7 +82,11 @@ vi.mock('../env.js', () => ({
   }),
 }));
 
-import { SlackChannel, SlackChannelOpts } from './slack.js';
+import {
+  SlackChannel,
+  SlackChannelOpts,
+  markdownToSlackMrkdwn,
+} from './slack.js';
 import { updateChatName } from '../db.js';
 import { readEnvFile } from '../env.js';
 
@@ -487,83 +491,43 @@ describe('SlackChannel', () => {
   // --- @mention translation ---
 
   describe('@mention translation', () => {
-    it('prepends trigger when bot is @mentioned via Slack format', async () => {
-      const opts = createTestOpts();
-      const channel = new SlackChannel(opts);
-      await channel.connect(); // sets botUserId to 'U_BOT_123'
-
-      const event = createMessageEvent({
-        text: 'Hey <@U_BOT_123> what do you think?',
-        user: 'U_USER_456',
-      });
-      await triggerMessageEvent(event);
-
-      expect(opts.onMessage).toHaveBeenCalledWith(
-        'slack:C0123456789',
-        expect.objectContaining({
-          content: '@Jonesy Hey <@U_BOT_123> what do you think?',
-        }),
-      );
-    });
-
-    it('does not prepend trigger when trigger pattern already matches', async () => {
-      const opts = createTestOpts();
-      const channel = new SlackChannel(opts);
-      await channel.connect();
-
-      const event = createMessageEvent({
-        text: '@Jonesy <@U_BOT_123> hello',
-        user: 'U_USER_456',
-      });
-      await triggerMessageEvent(event);
-
-      // Content should be unchanged since it already matches TRIGGER_PATTERN
-      expect(opts.onMessage).toHaveBeenCalledWith(
-        'slack:C0123456789',
-        expect.objectContaining({
-          content: '@Jonesy <@U_BOT_123> hello',
-        }),
-      );
-    });
-
-    it('does not translate mentions in bot messages', async () => {
+    // connect() sets botUserId to 'U_BOT_123'. Each case drives one message
+    // event and asserts the content the channel forwards.
+    it.each([
+      {
+        name: 'prepends trigger when bot is @mentioned via Slack format',
+        event: { text: 'Hey <@U_BOT_123> what do you think?', user: 'U_USER_456' },
+        content: '@Jonesy Hey <@U_BOT_123> what do you think?',
+      },
+      {
+        name: 'does not prepend trigger when trigger pattern already matches',
+        event: { text: '@Jonesy <@U_BOT_123> hello', user: 'U_USER_456' },
+        content: '@Jonesy <@U_BOT_123> hello',
+      },
+      {
+        name: 'does not translate mentions in bot messages',
+        event: {
+          text: 'Echo: <@U_BOT_123>',
+          subtype: 'bot_message',
+          botId: 'B_MY_BOT',
+        },
+        content: 'Echo: <@U_BOT_123>',
+      },
+      {
+        name: 'does not translate mentions for other users',
+        event: { text: 'Hey <@U_OTHER_USER> look at this', user: 'U_USER_456' },
+        content: 'Hey <@U_OTHER_USER> look at this',
+      },
+    ])('$name', async ({ event, content }) => {
       const opts = createTestOpts();
       const channel = new SlackChannel(opts);
       await channel.connect();
 
-      const event = createMessageEvent({
-        text: 'Echo: <@U_BOT_123>',
-        subtype: 'bot_message',
-        botId: 'B_MY_BOT',
-      });
-      await triggerMessageEvent(event);
+      await triggerMessageEvent(createMessageEvent(event));
 
-      // Bot messages skip mention translation
       expect(opts.onMessage).toHaveBeenCalledWith(
         'slack:C0123456789',
-        expect.objectContaining({
-          content: 'Echo: <@U_BOT_123>',
-        }),
-      );
-    });
-
-    it('does not translate mentions for other users', async () => {
-      const opts = createTestOpts();
-      const channel = new SlackChannel(opts);
-      await channel.connect();
-
-      const event = createMessageEvent({
-        text: 'Hey <@U_OTHER_USER> look at this',
-        user: 'U_USER_456',
-      });
-      await triggerMessageEvent(event);
-
-      // Mention is for a different user, not the bot
-      expect(opts.onMessage).toHaveBeenCalledWith(
-        'slack:C0123456789',
-        expect.objectContaining({
-          content: 'Hey <@U_OTHER_USER> look at this',
-        }),
+        expect.objectContaining({ content }),
       );
     });
   });
@@ -697,34 +661,20 @@ describe('SlackChannel', () => {
   // --- ownsJid ---
 
   describe('ownsJid', () => {
-    it('owns slack: JIDs', () => {
+    it.each([
+      { desc: 'owns slack: JIDs', jid: 'slack:C0123456789', owns: true },
+      { desc: 'owns slack: DM JIDs', jid: 'slack:D0123456789', owns: true },
+      { desc: 'does not own WhatsApp group JIDs', jid: '12345@g.us', owns: false },
+      {
+        desc: 'does not own WhatsApp DM JIDs',
+        jid: '12345@s.whatsapp.net',
+        owns: false,
+      },
+      { desc: 'does not own Telegram JIDs', jid: 'tg:123456', owns: false },
+      { desc: 'does not own unknown JID formats', jid: 'random-string', owns: false },
+    ])('$desc', ({ jid, owns }) => {
       const channel = new SlackChannel(createTestOpts());
-      expect(channel.ownsJid('slack:C0123456789')).toBe(true);
-    });
-
-    it('owns slack: DM JIDs', () => {
-      const channel = new SlackChannel(createTestOpts());
-      expect(channel.ownsJid('slack:D0123456789')).toBe(true);
-    });
-
-    it('does not own WhatsApp group JIDs', () => {
-      const channel = new SlackChannel(createTestOpts());
-      expect(channel.ownsJid('12345@g.us')).toBe(false);
-    });
-
-    it('does not own WhatsApp DM JIDs', () => {
-      const channel = new SlackChannel(createTestOpts());
-      expect(channel.ownsJid('12345@s.whatsapp.net')).toBe(false);
-    });
-
-    it('does not own Telegram JIDs', () => {
-      const channel = new SlackChannel(createTestOpts());
-      expect(channel.ownsJid('tg:123456')).toBe(false);
-    });
-
-    it('does not own unknown JID formats', () => {
-      const channel = new SlackChannel(createTestOpts());
-      expect(channel.ownsJid('random-string')).toBe(false);
+      expect(channel.ownsJid(jid)).toBe(owns);
     });
   });
 
@@ -855,5 +805,54 @@ describe('SlackChannel', () => {
       const channel = new SlackChannel(createTestOpts());
       expect(channel.name).toBe('slack');
     });
+  });
+});
+
+
+describe('markdownToSlackMrkdwn', () => {
+  it('converts **bold** to Slack *bold*', () => {
+    expect(markdownToSlackMrkdwn('**Achieved last week**')).toBe(
+      '*Achieved last week*',
+    );
+  });
+
+  it('converts ATX headings to bold', () => {
+    expect(markdownToSlackMrkdwn('# Heading')).toBe('*Heading*');
+  });
+
+  it('converts "- " / "* " bullets to "• "', () => {
+    expect(markdownToSlackMrkdwn('- one\n* two')).toBe('• one\n• two');
+  });
+
+  it('drops horizontal rules', () => {
+    expect(markdownToSlackMrkdwn('a\n---\nb')).toBe('a\n\nb');
+  });
+
+  it('rewrites markdown links to <url|text>', () => {
+    expect(markdownToSlackMrkdwn('see [doc](https://x.com/a.xlsx)')).toBe(
+      'see <https://x.com/a.xlsx|doc>',
+    );
+  });
+
+  it('leaves snake_case and __dunder__ identifiers intact', () => {
+    const input = 'Updated `x`, MAX__LIMIT, STATE_BREAKDOWN and files';
+    expect(markdownToSlackMrkdwn(input)).toBe(input);
+  });
+
+  it('never rewrites inside inline code', () => {
+    expect(markdownToSlackMrkdwn('run `--no-cache` now')).toBe(
+      'run `--no-cache` now',
+    );
+  });
+
+  it('never rewrites inside fenced code blocks', () => {
+    const input = 'before\n```\n# comment\n- item\n**kwargs\n```\nafter';
+    expect(markdownToSlackMrkdwn(input)).toBe(input);
+  });
+
+  it('leaves no sentinel control characters in the output', () => {
+    const out = markdownToSlackMrkdwn('a `code` b **bold** c');
+    expect(out).toBe('a `code` b *bold* c');
+    expect(out).not.toContain(String.fromCharCode(1));
   });
 });
