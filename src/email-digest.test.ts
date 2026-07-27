@@ -488,12 +488,10 @@ describe('loadGithub (fetch mocked)', () => {
   it('GraphQL errors array → known=false (never masquerades as all-clear)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: async () => ({ errors: [{ message: 'bad' }] }),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ errors: [{ message: 'bad' }] }),
+      }),
     );
     const out = await loadGithub(cfg);
     expect(out.known).toBe(false);
