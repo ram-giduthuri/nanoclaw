@@ -9,6 +9,36 @@ import {
 } from './m365-auth.js';
 import { ASSISTANT_NAME, TIMEZONE } from './config.js';
 import { NewMessage, RegisteredGroup } from './types.js';
+import { classifyEmail, decideAction } from './email-classifier.js';
+
+// Single folder for all auto-filed noise.
+const NANOCLAW_FOLDER = 'NanoClaw - outlook-main';
+// In-place tag (no move) on kept mail with no precise rule. Filed mail isn't tagged.
+const REVIEW_CATEGORY = 'NanoClaw Review';
+const NANOCLAW_CATEGORIES: Array<{ name: string; color: string }> = [
+  { name: REVIEW_CATEGORY, color: 'preset6' }, // purple
+];
+
+// Dry-run (default): classify + log but never mutate. Set M365_OUTLOOK_DRY_RUN=false to go live.
+function isDryRun(): boolean {
+  const env = readEnvFile(['M365_OUTLOOK_DRY_RUN']);
+  return env.M365_OUTLOOK_DRY_RUN !== 'false';
+}
+
+// Sources filed when live (roll out one at a time). Fail-safe: unset = file nothing.
+function getFileSources(): string[] {
+  const raw = readEnvFile(['M365_OUTLOOK_FILE_SOURCES']).M365_OUTLOOK_FILE_SOURCES;
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// User's GitHub login, for @mention detection.
+function getGithubHandle(): string | undefined {
+  return readEnvFile(['GITHUB_HANDLE']).GITHUB_HANDLE || undefined;
+}
 
 // --- Types ---
 
@@ -27,6 +57,7 @@ interface OutlookMessage {
   parentFolderId: string;
   inferenceClassification?: 'focused' | 'other';
   internetMessageHeaders?: Array<{ name: string; value: string }>;
+  categories?: string[];
 }
 
 interface MailFolder {
@@ -167,34 +198,57 @@ async function markAsRead(messageId: string): Promise<void> {
   }
 }
 
-// --- Sender classification ---
+async function assignCategories(
+  messageId: string,
+  categories: string[],
+): Promise<void> {
+  try {
+    // PATCH replaces the whole array — callers pass the full desired set.
+    await graphPatch(`/me/messages/${messageId}`, { categories });
+  } catch (err) {
+    logger.warn({ messageId, categories, err }, 'Failed to tag email');
+  }
+}
 
-const AUTOMATED_SENDER_PATTERNS = [
-  /^no-?reply@/i,
-  /^noreply@/i,
-  /^do-?not-?reply@/i,
-  /^mailer-daemon@/i,
-  /^postmaster@/i,
-  /^notifications?@/i,
-  /^alert[s]?@/i,
-  /^newsletter@/i,
-  /^marketing@/i,
-  /^info@/i,
-  /^support@.*\.com$/i,
-  /^hello@.*\.com$/i,
-  /^team@/i,
-  /^updates?@/i,
-  /^digest@/i,
-  /^bounce[s]?@/i,
-  /^feedback@/i,
-  /^automated@/i,
-];
+// Ensure our category exists in the master list (for a consistent color). Idempotent.
+async function ensureCategories(): Promise<void> {
+  try {
+    const existing = await graphGet<{ value: Array<{ displayName: string }> }>(
+      '/me/outlook/masterCategories',
+    );
+    const have = new Set(
+      (existing.value || []).map((c) => c.displayName.toLowerCase()),
+    );
+    for (const cat of NANOCLAW_CATEGORIES) {
+      if (have.has(cat.name.toLowerCase())) continue;
+      try {
+        await graphPost('/me/outlook/masterCategories', {
+          displayName: cat.name,
+          color: cat.color,
+        });
+        logger.info({ category: cat.name }, 'Created Outlook master category');
+      } catch (err) {
+        logger.warn({ category: cat.name, err }, 'Failed to create category');
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to provision master categories (non-fatal)');
+  }
+}
 
-function isLikelyAutomated(senderAddress: string): boolean {
-  return AUTOMATED_SENDER_PATTERNS.some((p) => p.test(senderAddress));
+// File a message: mark read, then move. /move returns a new id, so it's last.
+async function fileEmail(
+  messageId: string,
+  folderId: string | undefined,
+  dryRun: boolean,
+): Promise<void> {
+  if (dryRun) return;
+  await markAsRead(messageId);
+  if (folderId) await moveToFolder(messageId, folderId);
 }
 
 // --- Email classification ---
+// Sender/automation classification now lives in email-classifier.ts.
 
 function classifyByAlias(
   msg: OutlookMessage,
@@ -534,15 +588,15 @@ export async function startOutlookLoop(opts: OutlookLoopOpts): Promise<void> {
     return;
   }
 
-  // Ensure mail subfolders exist for each alias
-  for (const mapping of aliases) {
-    const folderName = `NanoClaw - ${mapping.groupFolder}`;
-    try {
-      await ensureMailFolder(folderName);
-    } catch {
-      // Non-fatal — emails will still be processed, just not moved
-    }
+  // Ensure the single destination folder + tag categories exist. Classification
+  // (not the alias) now decides what gets filed here.
+  let nanoclawFolderId: string | undefined;
+  try {
+    nanoclawFolderId = await ensureMailFolder(NANOCLAW_FOLDER);
+  } catch {
+    // Non-fatal — emails will still be classified, just not moved.
   }
+  await ensureCategories();
 
   // Register system groups for each alias
   for (const mapping of aliases) {
@@ -666,7 +720,7 @@ export async function startOutlookLoop(opts: OutlookLoopOpts): Promise<void> {
   async function pollInbox(): Promise<void> {
     try {
       const result = await graphGet<{ value: OutlookMessage[] }>(
-        '/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=50&$orderby=receivedDateTime desc&$select=id,conversationId,internetMessageId,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,isRead,parentFolderId,inferenceClassification,internetMessageHeaders',
+        '/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=50&$orderby=receivedDateTime desc&$select=id,conversationId,internetMessageId,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,isRead,parentFolderId,inferenceClassification,internetMessageHeaders,categories',
       );
 
       const messages = result.value || [];
@@ -683,6 +737,13 @@ export async function startOutlookLoop(opts: OutlookLoopOpts): Promise<void> {
 
       for (const msg of messages) {
         if (isOutlookProcessed(msg.id)) continue;
+
+        // Skip senderless mail (NDRs/system) — dereferencing it would throw and
+        // crash-loop the poll. Mirrors the backfill guard.
+        if (!msg.from?.emailAddress || !msg.toRecipients) {
+          markOutlookProcessed(msg.id);
+          continue;
+        }
 
         // Classify by alias
         const aliasMatch = classifyByAlias(msg, aliases);
@@ -778,14 +839,52 @@ export async function startOutlookLoop(opts: OutlookLoopOpts): Promise<void> {
         // All actions (drafting replies, etc.) must be explicitly requested
         // from the main Teams channel.
         markOutlookProcessed(msg.id);
-        await markAsRead(msg.id);
 
-        if (aliasMatch) {
-          const folderName = `NanoClaw - ${aliasMatch.groupFolder}`;
-          const folderId = folderIdCache.get(folderName);
-          if (folderId) {
-            await moveToFolder(msg.id, folderId);
+        // Only high-confidence dev noise files; everything else stays in the inbox.
+        const classification = classifyEmail({
+          fromAddress: msg.from.emailAddress.address,
+          fromName: msg.from.emailAddress.name,
+          subject: msg.subject,
+          bodyPreview: msg.bodyPreview,
+          headers: msg.internetMessageHeaders,
+          githubHandle: getGithubHandle(),
+        });
+        const action = decideAction(classification, {
+          dryRun: isDryRun(),
+          fileSources: getFileSources(),
+        });
+
+        if (classification.disposition === 'file') {
+          logger.info(
+            {
+              subject: msg.subject,
+              from: msg.from.emailAddress.address,
+              source: classification.source,
+              githubReason: classification.githubReason,
+              applied: action.file,
+            },
+            action.file
+              ? 'Outlook: filing email'
+              : 'Outlook: would file email (not applied)',
+          );
+          await fileEmail(msg.id, nanoclawFolderId, !action.file);
+        } else {
+          // Tag (no move) uncertain keeps; union with existing categories so none are wiped.
+          if (action.tag) {
+            const existing = msg.categories || [];
+            if (!existing.includes(REVIEW_CATEGORY)) {
+              await assignCategories(msg.id, [...existing, REVIEW_CATEGORY]);
+            }
           }
+          logger.debug(
+            {
+              subject: msg.subject,
+              from: msg.from.emailAddress.address,
+              source: classification.source,
+              tagged: action.tag,
+            },
+            'Outlook: keeping email in inbox',
+          );
         }
       }
     } catch (err) {

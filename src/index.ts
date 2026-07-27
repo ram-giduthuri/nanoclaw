@@ -47,6 +47,7 @@ import {
   upsertEmailThread,
 } from './db.js';
 import { startOutlookLoop } from './outlook.js';
+import { startDigestScheduler, getDigestConfig } from './email-digest.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
@@ -639,6 +640,21 @@ async function main(): Promise<void> {
       }
       const text = formatOutbound(rawText);
       if (text) await channel.sendMessage(jid, text);
+    },
+  });
+
+  // SOD/EOD "what needs your attention" digest. Channel-agnostic: it resolves the
+  // configured target jid (slack:… today, teams:… later) to its owning channel.
+  startDigestScheduler({
+    deliver: async (text) => {
+      const jid = getDigestConfig().targetJid;
+      if (!jid) return;
+      const channel = findChannel(channels, jid);
+      if (!channel) {
+        logger.warn({ jid }, 'Digest: no connected channel owns the target jid');
+        return;
+      }
+      await channel.sendMessage(jid, text);
     },
   });
   startIpcWatcher({
