@@ -651,7 +651,10 @@ async function main(): Promise<void> {
       if (!jid) return;
       const channel = findChannel(channels, jid);
       if (!channel) {
-        logger.warn({ jid }, 'Digest: no connected channel owns the target jid');
+        logger.warn(
+          { jid },
+          'Digest: no connected channel owns the target jid',
+        );
         return;
       }
       await channel.sendMessage(jid, text);

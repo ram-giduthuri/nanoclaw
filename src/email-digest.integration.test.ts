@@ -13,7 +13,13 @@ vi.mock('./m365-auth.js', () => ({ getGraphClient: () => null }));
 
 import { buildDigest } from './email-digest.js';
 
-const cfg = { githubToken: 't', timezone: 'UTC', targetJid: 'x', sodCron: '', eodCron: '' };
+const cfg = {
+  githubToken: 't',
+  timezone: 'UTC',
+  targetJid: 'x',
+  sodCron: '',
+  eodCron: '',
+};
 const ok = (data: unknown) => ({ ok: true, json: async () => ({ data }) });
 const node = (n: number) => ({
   number: n,
@@ -28,7 +34,12 @@ function mockGithub(reviewNodes: unknown[], mineNodes: unknown[] = []) {
     vi
       .fn()
       .mockResolvedValueOnce(ok({ viewer: { login: 'me' } }))
-      .mockResolvedValueOnce(ok({ reviewRequested: { nodes: reviewNodes }, mine: { nodes: mineNodes } })),
+      .mockResolvedValueOnce(
+        ok({
+          reviewRequested: { nodes: reviewNodes },
+          mine: { nodes: mineNodes },
+        }),
+      ),
   );
 }
 
@@ -56,7 +67,10 @@ describe('buildDigest SOD→EOD snapshot roundtrip', () => {
   });
 
   it('a failed GitHub fetch on SOD writes no snapshot and never claims all-clear', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 401 }),
+    );
     const sod = await buildDigest('sod', cfg, now);
     expect(sod).toContain('Could not reach GitHub');
     expect(sod).not.toContain('No PRs need you');

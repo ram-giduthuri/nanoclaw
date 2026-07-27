@@ -76,7 +76,8 @@ async function githubGraphql<T>(
   });
   if (!res.ok) throw new Error(`GitHub GraphQL ${res.status}`);
   const json = (await res.json()) as { data?: T; errors?: unknown };
-  if (json.errors) throw new Error(`GitHub GraphQL errors: ${JSON.stringify(json.errors)}`);
+  if (json.errors)
+    throw new Error(`GitHub GraphQL errors: ${JSON.stringify(json.errors)}`);
   return json.data as T;
 }
 
@@ -108,8 +109,10 @@ export function parseGithubData(data: GithubSearchData): GithubDigest {
   for (const n of data.mine?.nodes || []) {
     if (!n?.number) continue;
     const reasons: string[] = [];
-    if (n.reviewDecision === 'CHANGES_REQUESTED') reasons.push('changes requested');
-    const rollup = n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? null;
+    if (n.reviewDecision === 'CHANGES_REQUESTED')
+      reasons.push('changes requested');
+    const rollup =
+      n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? null;
     if (rollup === 'FAILURE' || rollup === 'ERROR') reasons.push('CI failing');
     if (reasons.length) {
       blocked.push({
@@ -157,7 +160,10 @@ async function fetchGithub(token: string): Promise<GithubDigest> {
     mine: `is:open is:pr author:${me} archived:false draft:false`,
     n: PAGE,
   });
-  if (data.reviewRequested.nodes?.length === PAGE || data.mine.nodes?.length === PAGE) {
+  if (
+    data.reviewRequested.nodes?.length === PAGE ||
+    data.mine.nodes?.length === PAGE
+  ) {
     logger.warn(
       { page: PAGE },
       'Digest: GitHub result page is full — some PRs may be truncated',
@@ -249,28 +255,43 @@ export interface GithubLoad {
 export async function loadGithub(cfg: DigestConfig): Promise<GithubLoad> {
   const empty: GithubDigest = { reviewRequested: [], blocked: [] };
   if (!cfg.githubToken) {
-    return { gh: empty, known: false, warning: '⚠️ GitHub token not configured — review/PR status unknown.' };
+    return {
+      gh: empty,
+      known: false,
+      warning: '⚠️ GitHub token not configured — review/PR status unknown.',
+    };
   }
   try {
     return { gh: await fetchGithub(cfg.githubToken), known: true };
   } catch (err) {
     logger.warn({ err }, 'Digest: GitHub fetch failed');
-    return { gh: empty, known: false, warning: '⚠️ Could not reach GitHub — review/PR status unknown.' };
+    return {
+      gh: empty,
+      known: false,
+      warning: '⚠️ Could not reach GitHub — review/PR status unknown.',
+    };
   }
 }
 
 export function reviewLines(prs: ReviewPr[], now: Date): string[] {
   return prs.map(
-    (p) => `   • [${reviewId(p)}](${p.url}) — ${p.author} · ${ageString(p.createdAt, now)}`,
+    (p) =>
+      `   • [${reviewId(p)}](${p.url}) — ${p.author} · ${ageString(p.createdAt, now)}`,
   );
 }
 
 export function blockedLines(prs: BlockedPr[]): string[] {
-  return prs.map((p) => `   • [#${p.number}](${p.url}) ${p.reasons.join(' + ')}`);
+  return prs.map(
+    (p) => `   • [#${p.number}](${p.url}) ${p.reasons.join(' + ')}`,
+  );
 }
 
 // Pure: build the SOD lines from resolved inputs (no I/O).
-export function renderSod(load: GithubLoad, meetings: Meeting[], now: Date): string[] {
+export function renderSod(
+  load: GithubLoad,
+  meetings: Meeting[],
+  now: Date,
+): string[] {
   const { gh, known, warning } = load;
   const lines = ['☀️ **Good morning.**'];
   if (warning) lines.push(warning);
@@ -282,10 +303,16 @@ export function renderSod(load: GithubLoad, meetings: Meeting[], now: Date): str
     );
   }
   if (gh.reviewRequested.length) {
-    lines.push(`🔴 **Review requested (${gh.reviewRequested.length})**`, ...reviewLines(gh.reviewRequested, now));
+    lines.push(
+      `🔴 **Review requested (${gh.reviewRequested.length})**`,
+      ...reviewLines(gh.reviewRequested, now),
+    );
   }
   if (gh.blocked.length) {
-    lines.push(`🟠 **Your PRs blocked (${gh.blocked.length})**`, ...blockedLines(gh.blocked));
+    lines.push(
+      `🟠 **Your PRs blocked (${gh.blocked.length})**`,
+      ...blockedLines(gh.blocked),
+    );
   }
   if (known && !gh.reviewRequested.length && !gh.blocked.length) {
     lines.push('✅ No PRs need you right now.');
@@ -308,7 +335,10 @@ async function buildSod(
   const lines = renderSod(load, meetings, now);
   // Snapshot awaiting-review for the EOD diff — only when GitHub answered.
   if (load.known) {
-    setRouterState(snapKey(today), JSON.stringify({ reviewIds: load.gh.reviewRequested.map(reviewId) }));
+    setRouterState(
+      snapKey(today),
+      JSON.stringify({ reviewIds: load.gh.reviewRequested.map(reviewId) }),
+    );
   }
   return lines;
 }
@@ -323,7 +353,11 @@ export function parseSnapshotIds(raw: string | undefined): Set<string> {
 
 // Pure: build the EOD lines from resolved inputs (no I/O). `morningIds` is the
 // SOD snapshot; it annotates but must NEVER gate what we show.
-export function renderEod(load: GithubLoad, morningIds: Set<string>, now: Date): string[] {
+export function renderEod(
+  load: GithubLoad,
+  morningIds: Set<string>,
+  now: Date,
+): string[] {
   const { gh, known, warning } = load;
   const lines = ['🌙 **End of day.**'];
   if (warning) lines.push(warning);
@@ -335,12 +369,19 @@ export function renderEod(load: GithubLoad, morningIds: Set<string>, now: Date):
   if (gh.reviewRequested.length) {
     lines.push(`🔴 **Awaiting your review (${gh.reviewRequested.length})**`);
     for (const p of gh.reviewRequested) {
-      const since = morningIds.has(reviewId(p)) ? 'since this morning' : 'new today';
-      lines.push(`   • [${reviewId(p)}](${p.url}) — ${p.author} · ${ageString(p.createdAt, now)} · ${since}`);
+      const since = morningIds.has(reviewId(p))
+        ? 'since this morning'
+        : 'new today';
+      lines.push(
+        `   • [${reviewId(p)}](${p.url}) — ${p.author} · ${ageString(p.createdAt, now)} · ${since}`,
+      );
     }
   }
   if (gh.blocked.length) {
-    lines.push(`🟠 **Your PRs still blocked (${gh.blocked.length})**`, ...blockedLines(gh.blocked));
+    lines.push(
+      `🟠 **Your PRs still blocked (${gh.blocked.length})**`,
+      ...blockedLines(gh.blocked),
+    );
   }
   if (cleared.length) lines.push(`✅ Cleared today: ${cleared.length}`);
   // Only ever claim clear when nothing actually awaits you right now.
@@ -362,7 +403,10 @@ export async function buildDigest(
 ): Promise<string> {
   const load = await loadGithub(cfg);
   const today = localDateInTz(now, cfg.timezone);
-  const lines = kind === 'sod' ? await buildSod(load, cfg, now, today) : buildEod(load, now, today);
+  const lines =
+    kind === 'sod'
+      ? await buildSod(load, cfg, now, today)
+      : buildEod(load, now, today);
   return lines.join('\n');
 }
 
@@ -380,9 +424,14 @@ function scheduleNext(
 ): void {
   let next: Date;
   try {
-    next = CronExpressionParser.parse(cronExpr, { tz: cfg.timezone }).next().toDate();
+    next = CronExpressionParser.parse(cronExpr, { tz: cfg.timezone })
+      .next()
+      .toDate();
   } catch (err) {
-    logger.error({ kind, cronExpr, err }, 'Digest: invalid cron, not scheduling');
+    logger.error(
+      { kind, cronExpr, err },
+      'Digest: invalid cron, not scheduling',
+    );
     return;
   }
   const delay = Math.max(1000, next.getTime() - Date.now());

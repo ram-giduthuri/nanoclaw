@@ -19,7 +19,8 @@ import {
 
 // A fixed clock — never use real Date in assertions.
 const NOW = new Date('2026-07-27T18:00:00.000Z');
-const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3600_000).toISOString();
+const hoursAgo = (h: number) =>
+  new Date(NOW.getTime() - h * 3600_000).toISOString();
 
 const pr = (over: Partial<ReviewPr> = {}): ReviewPr => ({
   repo: 'Tereina/pes',
@@ -60,17 +61,31 @@ describe('ageString', () => {
 
 describe('meetingTime', () => {
   it('renders all-day', () => {
-    expect(meetingTime({ subject: 'x', start: '2026-07-27', isAllDay: true })).toBe('all day');
+    expect(
+      meetingTime({ subject: 'x', start: '2026-07-27', isAllDay: true }),
+    ).toBe('all day');
   });
   it('slices HH:MM from the wall-clock string (no tz re-parse)', () => {
-    expect(meetingTime({ subject: 'x', start: '2026-07-27T09:30:00.0000000', isAllDay: false })).toBe('09:30');
+    expect(
+      meetingTime({
+        subject: 'x',
+        start: '2026-07-27T09:30:00.0000000',
+        isAllDay: false,
+      }),
+    ).toBe('09:30');
   });
   it('returns a too-short string as-is', () => {
-    expect(meetingTime({ subject: 'x', start: 'TBD', isAllDay: false })).toBe('TBD');
+    expect(meetingTime({ subject: 'x', start: 'TBD', isAllDay: false })).toBe(
+      'TBD',
+    );
   });
   it('boundary: exactly 16 chars slices; 15 returns as-is', () => {
-    expect(meetingTime({ subject: 'x', start: '2026-07-27T09:30', isAllDay: false })).toBe('09:30'); // 16
-    expect(meetingTime({ subject: 'x', start: '2026-07-27T09:3', isAllDay: false })).toBe('2026-07-27T09:3'); // 15
+    expect(
+      meetingTime({ subject: 'x', start: '2026-07-27T09:30', isAllDay: false }),
+    ).toBe('09:30'); // 16
+    expect(
+      meetingTime({ subject: 'x', start: '2026-07-27T09:3', isAllDay: false }),
+    ).toBe('2026-07-27T09:3'); // 15
   });
 });
 
@@ -99,13 +114,22 @@ describe('reviewId / line formatters', () => {
     expect(reviewId(pr({ repo: 'o/r', number: 42 }))).toBe('o/r#42');
   });
   it('reviewLines includes repo#num, author, age', () => {
-    const [line] = reviewLines([pr({ repo: 'o/r', number: 5, author: 'bob', createdAt: hoursAgo(3) })], NOW);
+    const [line] = reviewLines(
+      [pr({ repo: 'o/r', number: 5, author: 'bob', createdAt: hoursAgo(3) })],
+      NOW,
+    );
     expect(line).toContain('[o/r#5](https://gh/1)');
     expect(line).toContain('bob');
     expect(line).toContain('3h');
   });
   it('blockedLines joins reasons with +', () => {
-    const [line] = blockedLines([blocked({ number: 7, url: 'https://gh/7', reasons: ['changes requested', 'CI failing'] })]);
+    const [line] = blockedLines([
+      blocked({
+        number: 7,
+        url: 'https://gh/7',
+        reasons: ['changes requested', 'CI failing'],
+      }),
+    ]);
     expect(line).toBe('   • [#7](https://gh/7) changes requested + CI failing');
   });
 });
@@ -115,8 +139,22 @@ describe('parseGithubData', () => {
     const data = {
       reviewRequested: {
         nodes: [
-          { number: 1, title: 'a', url: 'u1', createdAt: 'c1', repository: { nameWithOwner: 'o/r' }, author: { login: 'x' } },
-          { number: 2, title: 'b', url: 'u2', createdAt: 'c2', repository: { nameWithOwner: 'o/r' }, author: null },
+          {
+            number: 1,
+            title: 'a',
+            url: 'u1',
+            createdAt: 'c1',
+            repository: { nameWithOwner: 'o/r' },
+            author: { login: 'x' },
+          },
+          {
+            number: 2,
+            title: 'b',
+            url: 'u2',
+            createdAt: 'c2',
+            repository: { nameWithOwner: 'o/r' },
+            author: null,
+          },
         ],
       },
       mine: { nodes: [] },
@@ -128,17 +166,33 @@ describe('parseGithubData', () => {
 
   it('filters out nodes without a number (non-PR search hits)', () => {
     const data = {
-      reviewRequested: { nodes: [{ foo: 1 }, null, { number: 3, repository: { nameWithOwner: 'o/r' } }] },
+      reviewRequested: {
+        nodes: [
+          { foo: 1 },
+          null,
+          { number: 3, repository: { nameWithOwner: 'o/r' } },
+        ],
+      },
       mine: { nodes: [] },
     };
     expect(parseGithubData(data as any).reviewRequested).toHaveLength(1);
   });
 
   it.each([
-    ['CHANGES_REQUESTED only', 'CHANGES_REQUESTED', 'SUCCESS', ['changes requested']],
+    [
+      'CHANGES_REQUESTED only',
+      'CHANGES_REQUESTED',
+      'SUCCESS',
+      ['changes requested'],
+    ],
     ['CI FAILURE only', 'APPROVED', 'FAILURE', ['CI failing']],
     ['CI ERROR only', 'APPROVED', 'ERROR', ['CI failing']],
-    ['both', 'CHANGES_REQUESTED', 'FAILURE', ['changes requested', 'CI failing']],
+    [
+      'both',
+      'CHANGES_REQUESTED',
+      'FAILURE',
+      ['changes requested', 'CI failing'],
+    ],
   ])('blocked: %s', (_l, decision, rollup, reasons) => {
     const data = {
       reviewRequested: { nodes: [] },
@@ -150,7 +204,9 @@ describe('parseGithubData', () => {
             url: 'u',
             reviewDecision: decision,
             repository: { nameWithOwner: 'o/r' },
-            commits: { nodes: [{ commit: { statusCheckRollup: { state: rollup } } }] },
+            commits: {
+              nodes: [{ commit: { statusCheckRollup: { state: rollup } } }],
+            },
           },
         ],
       },
@@ -169,7 +225,9 @@ describe('parseGithubData', () => {
             number: 9,
             repository: { nameWithOwner: 'o/r' },
             reviewDecision: 'APPROVED',
-            commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
+            commits: {
+              nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }],
+            },
           },
         ],
       },
@@ -180,13 +238,24 @@ describe('parseGithubData', () => {
   it('tolerates missing rollup / missing commits (null-safe)', () => {
     const data = {
       reviewRequested: { nodes: [] },
-      mine: { nodes: [{ number: 9, repository: { nameWithOwner: 'o/r' }, reviewDecision: 'REVIEW_REQUIRED' }] },
+      mine: {
+        nodes: [
+          {
+            number: 9,
+            repository: { nameWithOwner: 'o/r' },
+            reviewDecision: 'REVIEW_REQUIRED',
+          },
+        ],
+      },
     };
     expect(parseGithubData(data).blocked).toHaveLength(0);
   });
 
   it('handles empty/missing node arrays', () => {
-    expect(parseGithubData({ reviewRequested: {}, mine: {} } as any)).toEqual({ reviewRequested: [], blocked: [] });
+    expect(parseGithubData({ reviewRequested: {}, mine: {} } as any)).toEqual({
+      reviewRequested: [],
+      blocked: [],
+    });
   });
 });
 
@@ -213,7 +282,15 @@ describe('filterMeetings', () => {
     expect(filterMeetings(events, TODAY)).toHaveLength(0);
   });
   it('keeps tentative/not-responded, defaults missing subject', () => {
-    const out = filterMeetings([ev({ responseStatus: { response: 'tentativelyAccepted' }, subject: '' })], TODAY);
+    const out = filterMeetings(
+      [
+        ev({
+          responseStatus: { response: 'tentativelyAccepted' },
+          subject: '',
+        }),
+      ],
+      TODAY,
+    );
     expect(out).toHaveLength(1);
     expect(out[0].subject).toBe('(no subject)');
   });
@@ -221,7 +298,11 @@ describe('filterMeetings', () => {
 
 describe('renderSod', () => {
   it('leads with the header and shows the warning when GitHub is unknown', () => {
-    const lines = renderSod(load({ known: false, warning: '⚠️ unknown' }), [], NOW);
+    const lines = renderSod(
+      load({ known: false, warning: '⚠️ unknown' }),
+      [],
+      NOW,
+    );
     expect(lines[0]).toBe('☀️ **Good morning.**');
     expect(lines).toContain('⚠️ unknown');
     // never claims "no PRs need you" when we couldn't ask
@@ -244,18 +325,28 @@ describe('renderSod', () => {
   });
 
   it('singular "meeting" for one', () => {
-    const lines = renderSod(load(), [{ subject: 'A', start: '2026-07-27T09:00:00', isAllDay: false }], NOW);
+    const lines = renderSod(
+      load(),
+      [{ subject: 'A', start: '2026-07-27T09:00:00', isAllDay: false }],
+      NOW,
+    );
     expect(lines.join('\n')).toContain('Today: 1 meeting**');
   });
 
   it('says "No PRs need you" only when known and empty', () => {
-    expect(renderSod(load({ known: true }), [], NOW).join('\n')).toContain('No PRs need you');
+    expect(renderSod(load({ known: true }), [], NOW).join('\n')).toContain(
+      'No PRs need you',
+    );
   });
 });
 
 describe('renderEod', () => {
   it('when GitHub is unknown, shows only header + warning (no all-clear)', () => {
-    const lines = renderEod(load({ known: false, warning: '⚠️ down' }), new Set(), NOW);
+    const lines = renderEod(
+      load({ known: false, warning: '⚠️ down' }),
+      new Set(),
+      NOW,
+    );
     expect(lines).toEqual(['🌙 **End of day.**', '⚠️ down']);
   });
 
@@ -273,25 +364,40 @@ describe('renderEod', () => {
   });
 
   it('surfaces current requests even when the snapshot is missing', () => {
-    const lines = renderEod(load({ gh: { reviewRequested: [pr()], blocked: [] } }), new Set(), NOW);
+    const lines = renderEod(
+      load({ gh: { reviewRequested: [pr()], blocked: [] } }),
+      new Set(),
+      NOW,
+    );
     expect(lines.join('\n')).toContain('Awaiting your review (1)');
     expect(lines.join('\n')).not.toContain('All clear');
   });
 
   it('annotates since-morning vs new-today and counts cleared', () => {
     const lines = renderEod(
-      load({ gh: { reviewRequested: [pr({ number: 1 }), pr({ number: 3 })], blocked: [] } }),
+      load({
+        gh: {
+          reviewRequested: [pr({ number: 1 }), pr({ number: 3 })],
+          blocked: [],
+        },
+      }),
       new Set(['Tereina/pes#1', 'Tereina/pes#2']), // #2 got cleared, #3 is new
       NOW,
     );
     const text = lines.join('\n');
-    expect(text).toContain('Tereina/pes#1](https://gh/1) — alice · 2h · since this morning');
-    expect(text).toContain('Tereina/pes#3](https://gh/1) — alice · 2h · new today');
+    expect(text).toContain(
+      'Tereina/pes#1](https://gh/1) — alice · 2h · since this morning',
+    );
+    expect(text).toContain(
+      'Tereina/pes#3](https://gh/1) — alice · 2h · new today',
+    );
     expect(text).toContain('Cleared today: 1');
   });
 
   it('"All clear" only when nothing awaits and nothing cleared', () => {
-    expect(renderEod(load(), new Set(), NOW).join('\n')).toContain('✅ All clear.');
+    expect(renderEod(load(), new Set(), NOW).join('\n')).toContain(
+      '✅ All clear.',
+    );
   });
 
   it('"All caught up" when everything from the morning is cleared', () => {
@@ -302,7 +408,11 @@ describe('renderEod', () => {
   });
 
   it('never says clear while a PR is blocked', () => {
-    const lines = renderEod(load({ gh: { reviewRequested: [], blocked: [blocked()] } }), new Set(), NOW);
+    const lines = renderEod(
+      load({ gh: { reviewRequested: [], blocked: [blocked()] } }),
+      new Set(),
+      NOW,
+    );
     const text = lines.join('\n');
     expect(text).toContain('still blocked');
     expect(text).not.toContain('All clear');
@@ -327,7 +437,15 @@ describe('loadGithub (fetch mocked)', () => {
       .mockResolvedValueOnce(ok({ viewer: { login: 'me' } }))
       .mockResolvedValueOnce(
         ok({
-          reviewRequested: { nodes: [{ number: 1, repository: { nameWithOwner: 'o/r' }, author: { login: 'a' } }] },
+          reviewRequested: {
+            nodes: [
+              {
+                number: 1,
+                repository: { nameWithOwner: 'o/r' },
+                author: { login: 'a' },
+              },
+            ],
+          },
           mine: { nodes: [] },
         }),
       );
@@ -358,14 +476,25 @@ describe('loadGithub (fetch mocked)', () => {
   });
 
   it('non-2xx response → known=false with a "Could not reach" warning', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 401 }),
+    );
     const out = await loadGithub(cfg);
     expect(out.known).toBe(false);
     expect(out.warning).toContain('Could not reach');
   });
 
   it('GraphQL errors array → known=false (never masquerades as all-clear)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ errors: [{ message: 'bad' }] }) }));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ errors: [{ message: 'bad' }] }),
+        }),
+    );
     const out = await loadGithub(cfg);
     expect(out.known).toBe(false);
   });

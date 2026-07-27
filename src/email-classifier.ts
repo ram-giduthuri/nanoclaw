@@ -43,11 +43,14 @@ export interface EmailClassification {
 function isGithubActionable(reason: string, input: ClassifierInput): boolean {
   if (reason === 'assign') return true;
   const isAskReason =
-    reason === 'review_requested' || reason === 'mention' || reason === 'team_mention';
+    reason === 'review_requested' ||
+    reason === 'mention' ||
+    reason === 'team_mention';
   const body = (input.bodyPreview || '').toLowerCase();
   // No body to inspect (empty/HTML-only preview) → don't risk filing a real ask; keep it.
   if (!body) return isAskReason;
-  if (reason === 'review_requested') return body.includes('requested your review');
+  if (reason === 'review_requested')
+    return body.includes('requested your review');
   if (reason === 'mention' || reason === 'team_mention') {
     const handle = input.githubHandle?.toLowerCase();
     return !!handle && body.includes(`@${handle}`);
@@ -108,7 +111,8 @@ function isCalendar(input: ClassifierInput): boolean {
 
 // A Jira/Confluence "mentioned you" is an ask (keep); routine activity files.
 function isAtlassianMention(input: ClassifierInput): boolean {
-  const text = `${input.subject || ''} ${input.bodyPreview || ''}`.toLowerCase();
+  const text =
+    `${input.subject || ''} ${input.bodyPreview || ''}`.toLowerCase();
   return text.includes('mentioned you');
 }
 
@@ -121,7 +125,11 @@ function isHuman(input: ClassifierInput): boolean {
   if (name.toLowerCase() === addr) return false;
   if (isLikelyAutomated(addr)) return false;
   // Obvious no-reply / notification local-parts even without the patterns above.
-  if (/(^|[._-])(no-?reply|donotreply|notifications?|mailer|bounce)([._-]|@)/i.test(addr))
+  if (
+    /(^|[._-])(no-?reply|donotreply|notifications?|mailer|bounce)([._-]|@)/i.test(
+      addr,
+    )
+  )
     return false;
   return true;
 }
@@ -137,7 +145,12 @@ export function classifyEmail(input: ClassifierInput): EmailClassification {
     const reason = ghReason || 'subscribed';
     const actionNeeded = isGithubActionable(reason, input);
     return actionNeeded
-      ? { source: 'github', githubReason: reason, actionNeeded: true, disposition: 'keep' }
+      ? {
+          source: 'github',
+          githubReason: reason,
+          actionNeeded: true,
+          disposition: 'keep',
+        }
       : {
           source: 'github',
           githubReason: reason,
@@ -150,17 +163,32 @@ export function classifyEmail(input: ClassifierInput): EmailClassification {
   if (/^jira@/i.test(addr)) {
     return isAtlassianMention(input)
       ? { source: 'jira', actionNeeded: true, disposition: 'keep' }
-      : { source: 'jira', actionNeeded: false, disposition: 'file', category: 'Jira' };
+      : {
+          source: 'jira',
+          actionNeeded: false,
+          disposition: 'file',
+          category: 'Jira',
+        };
   }
 
   if (/^confluence@/i.test(addr)) {
     return isAtlassianMention(input)
       ? { source: 'confluence', actionNeeded: true, disposition: 'keep' }
-      : { source: 'confluence', actionNeeded: false, disposition: 'file', category: 'Confluence' };
+      : {
+          source: 'confluence',
+          actionNeeded: false,
+          disposition: 'file',
+          category: 'Confluence',
+        };
   }
 
   if (CI_SENDER_PATTERNS.some((p) => p.test(addr))) {
-    return { source: 'ci', actionNeeded: false, disposition: 'file', category: 'CI' };
+    return {
+      source: 'ci',
+      actionNeeded: false,
+      disposition: 'file',
+      category: 'CI',
+    };
   }
 
   if (isCalendar(input)) {
@@ -172,10 +200,20 @@ export function classifyEmail(input: ClassifierInput): EmailClassification {
   }
 
   if (isLikelyAutomated(addr)) {
-    return { source: 'automated', actionNeeded: false, disposition: 'keep', uncertainKeep: true };
+    return {
+      source: 'automated',
+      actionNeeded: false,
+      disposition: 'keep',
+      uncertainKeep: true,
+    };
   }
 
-  return { source: 'unknown', actionNeeded: false, disposition: 'keep', uncertainKeep: true };
+  return {
+    source: 'unknown',
+    actionNeeded: false,
+    disposition: 'keep',
+    uncertainKeep: true,
+  };
 }
 
 export interface ActionContext {
@@ -192,9 +230,15 @@ export interface EmailAction {
 
 // Decide what to actually do, given the classification + runtime config. Filing
 // needs live mode AND the source enabled; the review tag needs live mode.
-export function decideAction(c: EmailClassification, ctx: ActionContext): EmailAction {
+export function decideAction(
+  c: EmailClassification,
+  ctx: ActionContext,
+): EmailAction {
   if (c.disposition === 'file') {
-    return { file: !ctx.dryRun && ctx.fileSources.includes(c.source), tag: false };
+    return {
+      file: !ctx.dryRun && ctx.fileSources.includes(c.source),
+      tag: false,
+    };
   }
   return { file: false, tag: !!c.uncertainKeep && !ctx.dryRun };
 }

@@ -27,7 +27,9 @@ function isDryRun(): boolean {
 
 // Sources filed when live (roll out one at a time). Fail-safe: unset = file nothing.
 function getFileSources(): string[] {
-  const raw = readEnvFile(['M365_OUTLOOK_FILE_SOURCES']).M365_OUTLOOK_FILE_SOURCES;
+  const raw = readEnvFile([
+    'M365_OUTLOOK_FILE_SOURCES',
+  ]).M365_OUTLOOK_FILE_SOURCES;
   if (!raw) return [];
   return raw
     .split(',')
